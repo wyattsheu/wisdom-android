@@ -4,15 +4,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Android 11+ 套件可見性限制：沒宣告這個，queryIntentActivities()
-         找不到桌面啟動器，會靜默回傳空結果（不會報錯，但授權對象會抓空）。 -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.HOME" />
-        </intent>
-    </queries>
-
     <application
         android:label="@string/app_name"
         android:icon="@drawable/ic_launcher"
@@ -40,16 +31,5 @@
                 android:resource="@xml/widget_info" />
         </receiver>
 
-        <!-- 讓桌面啟動器能讀到圖片檔，避開 RemoteViews 的 1MB bitmap 限制 -->
-        <!-- exported 必須為 false（官方要求），改由程式明確授權給桌面啟動器 -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="com.wisdom.widget.images"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
     </application>
 </manifest>
