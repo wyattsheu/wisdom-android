@@ -4,6 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Android 11+ 套件可見性限制：沒宣告這個，queryIntentActivities()
+         找不到桌面啟動器，會靜默回傳空結果（不會報錯，但授權對象會抓空）。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
     <application
         android:label="@string/app_name"
         android:icon="@drawable/ic_launcher"
