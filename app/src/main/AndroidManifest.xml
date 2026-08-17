@@ -22,10 +22,11 @@
         </receiver>
 
         <!-- 讓桌面啟動器能讀到圖片檔，避開 RemoteViews 的 1MB bitmap 限制 -->
+        <!-- exported 必須為 false（官方要求），改由程式明確授權給桌面啟動器 -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.wisdom.widget.images"
-            android:exported="true"
+            android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
