@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:        # 也可以在 GitHub 網頁上手動按按鈕編譯
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
