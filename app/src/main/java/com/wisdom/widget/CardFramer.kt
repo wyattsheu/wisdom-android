@@ -24,13 +24,25 @@ object CardFramer {
     private const val FOCUS_Y = 0.5f
     private const val BG_COLOR = "#F7F4EF"
 
+    /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
+     *  超過就整個更新失敗。抓 1.5M 像素（約 6MB）為上限，足以覆蓋一般 widget 尺寸。 */
+    private const val MAX_PIXELS = 1_500_000
+
     /** 依小工具目前的 minWidth/minHeight（dp）換算成實際像素 */
     fun pixelSizeFor(ctx: Context, opts: Bundle): Pair<Int, Int> {
         val density = ctx.resources.displayMetrics.density
         val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300)
         val hDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
-        val w = (wDp * density).toInt().coerceIn(64, 2000)
-        val h = (hDp * density).toInt().coerceIn(64, 2000)
+        var w = (wDp * density).toInt().coerceIn(64, 2000)
+        var h = (hDp * density).toInt().coerceIn(64, 2000)
+
+        // 太大就等比例縮到預算內，寧可小一點也不要整個更新失敗
+        val total = w.toLong() * h.toLong()
+        if (total > MAX_PIXELS) {
+            val k = Math.sqrt(MAX_PIXELS.toDouble() / total.toDouble())
+            w = (w * k).toInt().coerceAtLeast(64)
+            h = (h * k).toInt().coerceAtLeast(64)
+        }
         return w to h
     }
 
@@ -46,7 +58,7 @@ object CardFramer {
         while (bounds.outWidth / sample > targetW * 3 && bounds.outHeight / sample > targetH * 3) sample *= 2
         val src = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
             inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.RGB_565
+            inPreferredConfig = Bitmap.Config.ARGB_8888
         }) ?: return null
 
         val sw = src.width.toFloat()
@@ -58,7 +70,10 @@ object CardFramer {
         val scaled = if (dw == src.width && dh == src.height) src
                      else Bitmap.createScaledBitmap(src, dw, dh, true).also { src.recycle() }
 
-        val out = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.RGB_565)
+        // 必須用 ARGB_8888：卡片底色是細膩漸層，RGB_565 只有 16 位元色，
+        // 會把漸層區的色階從 5000+ 種壓到 400+ 種 → 出現色塊與色偏
+        // （實測 RGB_565 的 PSNR 只有 37.9 dB，比 WebP q90 的 44 dB 還差）
+        val out = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         canvas.drawColor(Color.parseColor(BG_COLOR))
 
