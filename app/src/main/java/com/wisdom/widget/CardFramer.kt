@@ -7,21 +7,23 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Bundle
-import kotlin.math.max
+import kotlin.math.min
 
 /**
- * 把卡片圖裁切成小工具「目前實際尺寸」，邏輯跟 iOS widget.js 對齊
- * （ZOOM / FOCUS_Y 兩邊數值相同，兩個平台看起來才會一致）：
- *   ZOOM     等比填滿後再放大一點，裁掉卡片四周的留白裝飾
- *   FOCUS_Y  垂直對焦位置，0.5 = 正中，同時保住標題與內文
+ * 把卡片圖縮放成小工具「目前實際尺寸」。
  *
- * 用系統 ImageView 的 centerCrop 沒辦法控制對焦點，縮到小尺寸時
- * 常常裁到不該裁的地方 —— 所以改成我們自己算好裁切範圍、直接產生
- * 目標尺寸的 bitmap，ImageView 只負責原樣顯示。
+ * 過去用 cover＋放大 15% 再裁邊的做法，疊上 widget.xml 那個 ImageView
+ * 自己的 centerCrop，等於裁了兩層：只要各家 launcher 回報的
+ * minWidth/minHeight 跟畫面上實際容器尺寸有一點落差（不同機型系統加的
+ * 小工具留白不一樣、部分 launcher 回報本來就不準），ImageView 那層就會
+ * 完全不受控地再裁一次，而且裁多少純看每支手機的落差多大，跟怎麼調整
+ * 大小沒有必然關係。
+ *
+ * 改成這裡只做等比縮放「置中塞入」（contain，不裁切），配合 widget.xml
+ * 的 ImageView 也改成 fitCenter（不再二次裁切）——兩層都不裁，內容
+ * 保證完整，落差只會反映成留白大小不同，不會吃到文字。
  */
 object CardFramer {
-    private const val ZOOM = 1.15f
-    private const val FOCUS_Y = 0.5f
     private const val BG_COLOR = "#F7F4EF"
 
     /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
@@ -63,7 +65,8 @@ object CardFramer {
 
         val sw = src.width.toFloat()
         val sh = src.height.toFloat()
-        val scale = max(targetW / sw, targetH / sh) * ZOOM
+        // contain：兩個方向都不超出目標範圍，保證卡片整張完整可見
+        val scale = min(targetW / sw, targetH / sh)
         val dw = (sw * scale).toInt().coerceAtLeast(1)
         val dh = (sh * scale).toInt().coerceAtLeast(1)
 
@@ -78,11 +81,7 @@ object CardFramer {
         canvas.drawColor(Color.parseColor(BG_COLOR))
 
         val dx = (targetW - dw) / 2f
-        val dy = if (dh >= targetH) {
-            ((targetH / 2f) - (dh * FOCUS_Y)).coerceIn((targetH - dh).toFloat(), 0f)
-        } else {
-            (targetH - dh) / 2f
-        }
+        val dy = (targetH - dh) / 2f
         canvas.drawBitmap(scaled, dx, dy, null)
         scaled.recycle()
         return out
