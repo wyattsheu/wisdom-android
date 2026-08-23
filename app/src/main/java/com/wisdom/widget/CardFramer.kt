@@ -6,8 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 把卡片圖裁切成小工具「目前實際尺寸」，邏輯跟 iOS widget.js 對齊
@@ -18,11 +20,23 @@ import kotlin.math.max
  * 用系統 ImageView 的 centerCrop 沒辦法控制對焦點，縮到小尺寸時
  * 常常裁到不該裁的地方 —— 所以改成我們自己算好裁切範圍、直接產生
  * 目標尺寸的 bitmap，ImageView 只負責原樣顯示。
+ *
+ * ASUS ZenUI 的 launcher 回報的小工具寬高（AppWidgetManager 的
+ * minWidth/minHeight）跟畫面上實際可見範圍對不太準，套用同一套「填滿再
+ * 裁掉多餘」的算法會裁到文字，而且移除重放、重裝 App 都救不回來
+ * （回報的數字本身就不準，不是快取或狀態問題）。其他廠牌（例如 One UI）
+ * 這個數字很準，裁字效果好看，不想因為 ASUS 動到。所以只在 ASUS 裝置上
+ * 切成「等比縮放置中塞入」（contain，不裁切、只留白），其餘裝置維持原本
+ * 填滿裁切的效果。
  */
 object CardFramer {
     private const val ZOOM = 1.15f
     private const val FOCUS_Y = 0.5f
     private const val BG_COLOR = "#F7F4EF"
+
+    private val isAsus =
+        Build.MANUFACTURER.equals("asus", ignoreCase = true) ||
+        Build.BRAND.equals("asus", ignoreCase = true)
 
     /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
      *  超過就整個更新失敗。抓 1.5M 像素（約 6MB）為上限，足以覆蓋一般 widget 尺寸。 */
@@ -63,7 +77,9 @@ object CardFramer {
 
         val sw = src.width.toFloat()
         val sh = src.height.toFloat()
-        val scale = max(targetW / sw, targetH / sh) * ZOOM
+        // contain：兩個方向都不超出目標範圍，保證卡片整張完整可見（僅 ASUS 用）
+        val scale = if (isAsus) min(targetW / sw, targetH / sh)
+                    else max(targetW / sw, targetH / sh) * ZOOM
         val dw = (sw * scale).toInt().coerceAtLeast(1)
         val dh = (sh * scale).toInt().coerceAtLeast(1)
 
