@@ -16,10 +16,10 @@ class WisdomWidget : AppWidgetProvider() {
         kick(ctx)
     }
 
-    /** widget_info.xml 已鎖 resizeMode="none"，正常不會再有拖曳事件；
-     *  保留這個 callback 是因為部分 launcher 在剛放上桌面、系統設定變動
-     *  （字級、螢幕方向）時仍可能送一次 options 變更，用目前快取的圖依
-     *  新尺寸重繪即可，不用重新下載。 */
+    /** CardFramer 現在只解圖、不裁切（裁切交給 widget.xml 的 centerCrop
+     *  在真正佈局時用實際大小處理），所以這裡不再需要理會 newOptions
+     *  裡的尺寸數字——保留這個 callback 純粹是因為某些 launcher 在剛
+     *  放上桌面、系統設定變動時仍可能觸發一次，重繪同一張圖即可。 */
     override fun onAppWidgetOptionsChanged(
         ctx: Context, mgr: AppWidgetManager, id: Int, newOptions: Bundle
     ) {
@@ -29,8 +29,7 @@ class WisdomWidget : AppWidgetProvider() {
             ?.filter { it.name.endsWith(".webp") }
             ?.maxByOrNull { it.lastModified() } ?: return
 
-        val (w, h) = CardFramer.pixelSizeFor(ctx, newOptions)
-        val bmp = CardFramer.frame(file.absolutePath, w, h) ?: return
+        val bmp = CardFramer.frame(file.absolutePath) ?: return
 
         val views = RemoteViews(ctx.packageName, R.layout.widget)
         views.setImageViewBitmap(R.id.image, bmp)

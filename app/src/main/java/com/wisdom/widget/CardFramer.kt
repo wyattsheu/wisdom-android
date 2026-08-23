@@ -1,90 +1,43 @@
 package com.wisdom.widget
 
-import android.appwidget.AppWidgetManager
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.os.Bundle
-import kotlin.math.max
 
 /**
- * 把卡片圖裁切填滿小工具（正方形，跟 iOS small widget 同一種做法）。
+ * 只負責把卡片圖解成一張「原始長寬比、記憶體安全」的 bitmap，不做任何
+ * 裁切或縮放到某個猜測尺寸。
  *
- * widget_info.xml 已經把小工具鎖成固定正方形、resizeMode="none"，容器
- * 形狀不會再因為使用者拖曳或各家 launcher 回報不準而跑掉，所以這裡直接
- * 用最簡單的 cover＋對焦裁切：等比放大到完全填滿正方形，多出來的部分
- * （主要是卡片上下的裝飾插圖）裁掉，不留白、不加模糊背景。
- *   ZOOM     等比填滿後再放大一點，裁掉卡片四周的留白裝飾
- *   FOCUS_Y  垂直對焦位置，0.5 = 正中，優先保住標題／內文／出處
+ * 這是這個檔案第 N 次改版才學到的教訓：不管我們怎麼算裁切範圍
+ * （cover、contain、模糊背景、鎖定固定比例……），只要是「事先假設一個
+ * 目標尺寸再裁好圖」，就一定會被某支手機的 launcher 打臉——有些
+ * launcher 回報的 minWidth/minHeight 不準，有些甚至直接無視
+ * resizeMode="none" 和宣告的尺寸，自己決定要用什麼形狀顯示。事先裁好的
+ * 圖只要跟畫面最後真正呈現的形狀對不上，就會出現裁到文字或留下黑邊。
+ *
+ * 真正不會出錯的做法，是把「怎麼填滿容器」這件事完全交給
+ * widget.xml 裡 ImageView 自己的 android:scaleType="centerCrop"——那是
+ * Android 系統在畫面真正佈局的當下、用它自己量出來的真實大小去裁切，
+ * 不是我們提前用一個可能不準的數字用猜的，所以不管容器最後被那支手機
+ * 決定成什麼形狀，都保證填滿、不留白。
  */
 object CardFramer {
-    private const val ZOOM = 1.15f
-    private const val FOCUS_Y = 0.5f
-    private const val BG_COLOR = "#F7F4EF"
-
     /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
      *  超過就整個更新失敗。抓 1.5M 像素（約 6MB）為上限，足以覆蓋一般 widget 尺寸。 */
     private const val MAX_PIXELS = 1_500_000
 
-    /** 依小工具目前的 minWidth/minHeight（dp）換算成實際像素 */
-    fun pixelSizeFor(ctx: Context, opts: Bundle): Pair<Int, Int> {
-        val density = ctx.resources.displayMetrics.density
-        val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300)
-        val hDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300)
-        var w = (wDp * density).toInt().coerceIn(64, 2000)
-        var h = (hDp * density).toInt().coerceIn(64, 2000)
-
-        // 太大就等比例縮到預算內，寧可小一點也不要整個更新失敗
-        val total = w.toLong() * h.toLong()
-        if (total > MAX_PIXELS) {
-            val k = Math.sqrt(MAX_PIXELS.toDouble() / total.toDouble())
-            w = (w * k).toInt().coerceAtLeast(64)
-            h = (h * k).toInt().coerceAtLeast(64)
-        }
-        return w to h
-    }
-
-    fun frame(path: String, targetW: Int, targetH: Int): Bitmap? {
-        if (targetW <= 0 || targetH <= 0) return null
-
+    fun frame(path: String): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0) return null
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        // 只降到「夠用」的解析度，不必整張原圖解碼，省記憶體
         var sample = 1
-        while (bounds.outWidth / sample > targetW * 3 && bounds.outHeight / sample > targetH * 3) sample *= 2
-        val src = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+        while ((bounds.outWidth / sample).toLong() * (bounds.outHeight / sample) > MAX_PIXELS) {
+            sample *= 2
+        }
+
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
-        }) ?: return null
-
-        val sw = src.width.toFloat()
-        val sh = src.height.toFloat()
-        val scale = max(targetW / sw, targetH / sh) * ZOOM
-        val dw = (sw * scale).toInt().coerceAtLeast(1)
-        val dh = (sh * scale).toInt().coerceAtLeast(1)
-
-        val scaled = if (dw == src.width && dh == src.height) src
-                     else Bitmap.createScaledBitmap(src, dw, dh, true).also { src.recycle() }
-
-        // 必須用 ARGB_8888：卡片底色是細膩漸層，RGB_565 只有 16 位元色，
-        // 會把漸層區的色階從 5000+ 種壓到 400+ 種 → 出現色塊與色偏
-        // （實測 RGB_565 的 PSNR 只有 37.9 dB，比 WebP q90 的 44 dB 還差）
-        val out = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawColor(Color.parseColor(BG_COLOR))
-
-        val dx = (targetW - dw) / 2f
-        val dy = if (dh >= targetH) {
-            ((targetH / 2f) - (dh * FOCUS_Y)).coerceIn((targetH - dh).toFloat(), 0f)
-        } else {
-            (targetH - dh) / 2f
-        }
-        canvas.drawBitmap(scaled, dx, dy, null)
-        scaled.recycle()
-        return out
+        })
     }
 }

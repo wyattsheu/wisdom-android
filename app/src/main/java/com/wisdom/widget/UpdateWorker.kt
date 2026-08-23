@@ -93,28 +93,22 @@ class UpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         runCatching { showStatus(ctx, msg) }
     }
 
-    /** 依每個 widget「目前實際尺寸」裁切（CardFramer，邏輯跟 iOS 對齊），
-     *  不用 content:// Uri（先前跨 App 授權失敗的來源），bitmap 直送最穩定。 */
+    /** 不用 content:// Uri（先前跨 App 授權失敗的來源），bitmap 直送最穩定。
+     *  裁切交給 widget.xml 的 centerCrop 在真正佈局時處理，這裡每個 widget
+     *  實例都送同一張未裁切的圖即可，不用再理會各自的回報尺寸。 */
     private fun render(ctx: Context, file: File) {
         val mgr = AppWidgetManager.getInstance(ctx)
         val ids = mgr.getAppWidgetIds(ComponentName(ctx, WisdomWidget::class.java))
         if (ids.isEmpty()) return   // 還沒有任何 widget 被放上桌面
 
-        var renderedAny = false
-        for (id in ids) {
-            val opts = mgr.getAppWidgetOptions(id)
-            val (w, h) = CardFramer.pixelSizeFor(ctx, opts)
-            val bmp = CardFramer.frame(file.absolutePath, w, h) ?: continue
+        val bmp = CardFramer.frame(file.absolutePath)
+            ?: throw IllegalStateException("CardFramer 解圖失敗，圖檔可能損毀：${file.length()} bytes")
 
+        for (id in ids) {
             val views = RemoteViews(ctx.packageName, R.layout.widget)
             views.setImageViewBitmap(R.id.image, bmp)
             views.setViewVisibility(R.id.status, android.view.View.GONE)
             mgr.updateAppWidget(id, views)
-            renderedAny = true
-        }
-
-        if (!renderedAny) {
-            throw IllegalStateException("CardFramer 全部失敗，圖檔可能損毀：${file.length()} bytes")
         }
     }
 
