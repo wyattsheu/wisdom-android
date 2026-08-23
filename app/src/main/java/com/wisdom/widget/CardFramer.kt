@@ -7,31 +7,22 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Bundle
-import kotlin.math.min
+import kotlin.math.max
 
 /**
- * 把卡片圖畫成小工具「目前實際尺寸」。
+ * 把卡片圖裁切填滿小工具（正方形，跟 iOS small widget 同一種做法）。
  *
- * 「絕對不裁到文字」跟「絕對貼邊、零留白」這兩個目標互斥：小工具容器
- * 是什麼形狀（各家 launcher 回報的 minWidth/minHeight 準不準、系統/
- * launcher 自己又加了多少留白）沒辦法保證跟卡片圖的固定長寬比吻合，而
- * 且落差每支手機不一樣、有些手機不管怎麼調整大小都存在（不是使用者
- * 調整能解的問題）。硬要貼邊填滿（cover）就會在落差大的手機上裁到
- * 標題或內文；硬要保留完整內容（contain）就會在落差大的手機上留白，
- * 留白若用純色塊填會很突兀。
- *
- * 這裡採用「模糊放大同一張圖當底、完整卡片置中疊在上面」的做法
- * （Spotify/Apple Music 播放介面遇到固定比例圖片配任意形狀容器時的
- * 標準處理）：不管容器形狀落差多大，完整內容一定保留在上層，多出來的
- * 空間用同一張卡片的模糊延伸填滿，不會出現生硬的黑色/單色留白。
+ * widget_info.xml 已經把小工具鎖成固定正方形、resizeMode="none"，容器
+ * 形狀不會再因為使用者拖曳或各家 launcher 回報不準而跑掉，所以這裡直接
+ * 用最簡單的 cover＋對焦裁切：等比放大到完全填滿正方形，多出來的部分
+ * （主要是卡片上下的裝飾插圖）裁掉，不留白、不加模糊背景。
+ *   ZOOM     等比填滿後再放大一點，裁掉卡片四周的留白裝飾
+ *   FOCUS_Y  垂直對焦位置，0.5 = 正中，優先保住標題／內文／出處
  */
 object CardFramer {
+    private const val ZOOM = 1.15f
+    private const val FOCUS_Y = 0.5f
     private const val BG_COLOR = "#F7F4EF"
-
-    /** 背景模糊強度：縮到目標尺寸的 1/N 再放大回去，N 越大越模糊 */
-    private const val BLUR_DOWNSCALE = 16
-    /** 模糊底圖上疊一層半透明黑，避免圖片顏色太雜跟前景卡片打架 */
-    private const val SCRIM_ALPHA = 60
 
     /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
      *  超過就整個更新失敗。抓 1.5M 像素（約 6MB）為上限，足以覆蓋一般 widget 尺寸。 */
@@ -72,6 +63,12 @@ object CardFramer {
 
         val sw = src.width.toFloat()
         val sh = src.height.toFloat()
+        val scale = max(targetW / sw, targetH / sh) * ZOOM
+        val dw = (sw * scale).toInt().coerceAtLeast(1)
+        val dh = (sh * scale).toInt().coerceAtLeast(1)
+
+        val scaled = if (dw == src.width && dh == src.height) src
+                     else Bitmap.createScaledBitmap(src, dw, dh, true).also { src.recycle() }
 
         // 必須用 ARGB_8888：卡片底色是細膩漸層，RGB_565 只有 16 位元色，
         // 會把漸層區的色階從 5000+ 種壓到 400+ 種 → 出現色塊與色偏
@@ -80,27 +77,12 @@ object CardFramer {
         val canvas = Canvas(out)
         canvas.drawColor(Color.parseColor(BG_COLOR))
 
-        // 模糊底：整張圖直接壓扁縮到很小再放大——反正會糊成一片，
-        // 些微變形完全看不出來，不用另外算 cover 裁切範圍
-        val blurW = (targetW / BLUR_DOWNSCALE).coerceAtLeast(6)
-        val blurH = (targetH / BLUR_DOWNSCALE).coerceAtLeast(6)
-        val tiny = Bitmap.createScaledBitmap(src, blurW, blurH, true)
-        val blurred = Bitmap.createScaledBitmap(tiny, targetW, targetH, true)
-        tiny.recycle()
-        canvas.drawBitmap(blurred, 0f, 0f, null)
-        blurred.recycle()
-        canvas.drawColor(Color.argb(SCRIM_ALPHA, 0, 0, 0))
-
-        // 完整卡片：等比縮放置中塞入（contain），保證不管容器形狀落差
-        // 多大，標題、內文、出處一定完整可見，絕不裁切
-        val scale = min(targetW / sw, targetH / sh)
-        val dw = (sw * scale).toInt().coerceAtLeast(1)
-        val dh = (sh * scale).toInt().coerceAtLeast(1)
-        val scaled = if (dw == src.width && dh == src.height) src
-                     else Bitmap.createScaledBitmap(src, dw, dh, true).also { src.recycle() }
-
         val dx = (targetW - dw) / 2f
-        val dy = (targetH - dh) / 2f
+        val dy = if (dh >= targetH) {
+            ((targetH / 2f) - (dh * FOCUS_Y)).coerceIn((targetH - dh).toFloat(), 0f)
+        } else {
+            (targetH - dh) / 2f
+        }
         canvas.drawBitmap(scaled, dx, dy, null)
         scaled.recycle()
         return out
