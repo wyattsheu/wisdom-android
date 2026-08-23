@@ -26,7 +26,7 @@ object CardFramer {
      *  正方形容器那層系統的 centerCrop 沒辦法指定偏上/偏下，永遠置中，
      *  所以想讓畫面整體偏上，只能在這裡先把保留的範圍往上偏，疊加起來
      *  才會感覺往上移。調低於 0.5 = 偏上，數值越小偏越多。 */
-    private const val FOCUS_Y = 0.2f
+    private const val FOCUS_Y = 0.1f
 
     /** ARGB_8888 每像素 4 bytes，RemoteViews 透過 binder 傳圖有大小限制，
      *  超過就整個更新失敗。抓 1.5M 像素（約 6MB）為上限，足以覆蓋一般 widget 尺寸。 */
