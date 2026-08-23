@@ -16,8 +16,10 @@ class WisdomWidget : AppWidgetProvider() {
         kick(ctx)
     }
 
-    /** 使用者拖拉調整 widget 大小時觸發：用目前快取的圖，依新尺寸重新裁切。
-     *  不用重新下載，純粹是取景問題，馬上就能反應。 */
+    /** widget_info.xml 已鎖 resizeMode="none"，正常不會再有拖曳事件；
+     *  保留這個 callback 是因為部分 launcher 在剛放上桌面、系統設定變動
+     *  （字級、螢幕方向）時仍可能送一次 options 變更，用目前快取的圖依
+     *  新尺寸重繪即可，不用重新下載。 */
     override fun onAppWidgetOptionsChanged(
         ctx: Context, mgr: AppWidgetManager, id: Int, newOptions: Bundle
     ) {
